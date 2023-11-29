@@ -41,7 +41,14 @@ const resolvers = {
       return user;
     },
     saveBook: async (parent, { bookInput }, context) => {
-      const user = context.user; 
+      const user = context.user;
+    
+      // Validate that bookInput has all required fields
+      const { title, author, description, image, link } = bookInput;
+      if (!title || !author || !description || !image || !link) {
+        throw new Error('All fields for a book must be provided.');
+      }
+    
       user.savedBooks.push(bookInput);
       await user.save();
       return user;
