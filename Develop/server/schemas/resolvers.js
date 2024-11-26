@@ -1,70 +1,69 @@
-const { Tech, Matchup, User } = require('../models');
+const { User } = require('../models');
+const { signToken, AuthenticationError } = require('../utils/auth');
 
 const resolvers = {
   Query: {
-    tech: async () => {
-      return Tech.find({});
-    },
-    matchups: async (parent, { _id }) => {
-      const params = _id ? { _id } : {};
-      return Matchup.find(params);
-    },
     me: async (parent, args, context) => {
-      return context.user;
-    },
-    books: async () => {
-      return Book.find({});
-    },
-    bookSearch: async (parent, { query }) => {
-      return Book.find({ $or: [{ title: { $regex: query, $options: 'i' } }, { author: { $regex: query, $options: 'i' } }] });
+      if (context.user) {
+        const userData = await User.findOne({ _id: context.user._id }).select('-__v -password');
+
+        return userData;
+      }
+
+      throw AuthenticationError;
     },
   },
+
   Mutation: {
-    createMatchup: async (parent, args) => {
-      const matchup = await Matchup.create(args);
-      return matchup;
-    },
-    createVote: async (parent, { _id, techNum }) => {
-      const vote = await Matchup.findOneAndUpdate(
-        { _id },
-        { $inc: { [`tech${techNum}_votes`]: 1 } },
-        { new: true }
-      );
-      return vote;
-    },
-    signup: async (parent, args) => {
+    addUser: async (parent, args) => {
       const user = await User.create(args);
-      return user;
+      const token = signToken(user);
+
+      return { token, user };
     },
     login: async (parent, { email, password }) => {
-      const user = await User.findOne({ email, password });
-      return user;
-    },
-    saveBook: async (parent, { bookInput }, context) => {
-      const user = context.user;
-    
-      // Validate that bookInput has all required fields
-      const { title, author, description, image, link } = bookInput;
-      if (!title || !author || !description || !image || !link) {
-        throw new Error('All fields for a book must be provided.');
+      const user = await User.findOne({ email });
+
+      if (!user) {
+        throw AuthenticationError;
       }
-    
-      user.savedBooks.push(bookInput);
-      await user.save();
-      return user;
+
+      const correctPw = await user.isCorrectPassword(password);
+
+      if (!correctPw) {
+        throw AuthenticationError;
+      }
+
+      const token = signToken(user);
+      return { token, user };
+    },
+    saveBook: async (parent, { bookData }, context) => {
+      if (context.user) {
+        const updatedUser = await User.findByIdAndUpdate(
+          { _id: context.user._id },
+          { $push: { savedBooks: bookData } },
+          { new: true }
+        );
+
+        return updatedUser;
+      }
+
+      throw AuthenticationError;
     },
     removeBook: async (parent, { bookId }, context) => {
-      const user = context.user; 
-      user.savedBooks = user.savedBooks.filter(book => book._id !== bookId);
-      await user.save();
-      return user;
-    },
-    logout: async (parent, args, context) => {
-      context.user = null; 
-      return 'Successfully logged out';
+      if (context.user) {
+        const updatedUser = await User.findOneAndUpdate(
+          { _id: context.user._id },
+          { $pull: { savedBooks: { bookId } } },
+          { new: true }
+        );
+
+        return updatedUser;
+      }
+
+      throw AuthenticationError;
     },
   },
 };
 
 module.exports = resolvers;
-
